@@ -2,12 +2,14 @@ defmodule KVstore.Storage do
   @moduledoc """
   Storage for KV.
 
-  This is `:dets` with option `ram_file: true` and
-  calls `:dets.sync` on modify
+  This is `:dets` with option `ram_file: true`,
+  calls `:dets.sync` on modification
   """
 
   use GenServer
   require Logger
+
+  alias KVstore.Storage.TTL
 
   @name __MODULE__
 
@@ -30,9 +32,13 @@ defmodule KVstore.Storage do
     :dets.select(KVstore.Storage, select_all)
   end
 
-  def delete(key) do
+  def delete(key, remove_from_ttl \\ true) do
     :dets.delete(@name, key)
     :dets.sync(@name)
+
+    if remove_from_ttl do
+      TTL.remove(key)
+    end
   end
 
   @doc false
@@ -49,8 +55,8 @@ defmodule KVstore.Storage do
   def init(:ok) do
     file_path = Application.fetch_env!(:kvstore, :dets_file_path)
     case :dets.open_file(@name, file: to_charlist(file_path), type: :set, ram_file: true) do
-      {:ok, _} = result ->
-        result
+      {:ok, _} ->
+        TTL.start_link(list())
 
       {:error, reason} ->
         Logger.error("Can't open dets table - #{file_path}, reason - #{reason}")
@@ -59,11 +65,14 @@ defmodule KVstore.Storage do
   end
 
   def handle_call({:create, key, value, ttl}, _from, state) do
-    :ok = :dets.insert(@name, {key, value, ttl})
+    ttl_end = System.system_time(:millisecond) + ttl
+
+    :ok = :dets.insert(@name, {key, value, ttl_end})
     :dets.sync(@name)
+    TTL.insert(key, ttl_end)
 
     {:reply, :ok, state}
   end
 
-  def terminate(_, _) do :dets.close(@name) end
+  def terminate(_, _), do: :dets.close(@name)
 end

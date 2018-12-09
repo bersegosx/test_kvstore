@@ -45,7 +45,9 @@ defmodule KVstore.Router do
 
   post "/store" do
     validate_request!(conn, ["key", "value", "ttl"])
+
     %{"key" => key, "value" => value, "ttl" => ttl} = conn.body_params
+    {ttl, _} = Integer.parse(ttl, 10)
 
     {status, message} =
       case Storage.get(key) do
@@ -70,6 +72,8 @@ defmodule KVstore.Router do
     validate_request!(conn, ["value", "ttl"])
 
     %{"value" => v, "ttl" => ttl} = conn.body_params
+    {ttl, _} = Integer.parse(ttl, 10)
+
     Storage.create(key, v, ttl)
     send_resp(conn, 200, format_key({key, v, ttl}))
   end
@@ -104,7 +108,7 @@ defmodule KVstore.Router do
   end
 
   defp is_valid_ttl?(v) do
-    # ttl (time to live) must be string with uint content
+    # ttl (time to live) must be a string with uint
     case Integer.parse(v, 10) do
       {v, _} ->
         v > 0

@@ -11,9 +11,9 @@ defmodule KVstore.Test.Router do
 
     Enum.each(
       [
-        {"one", 2, "100"},
-        {"23", "string", 200},
-        {"456", 32, 200},
+        {"one", 2,        100_000},
+        {"23",  "string", 200_000},
+        {"456", 32,       300_000},
       ],
       fn ({k, v, ttl}) -> Storage.create(k, v, ttl) end
     )
@@ -31,7 +31,12 @@ defmodule KVstore.Test.Router do
       |> Router.call(@opts)
 
     assert_200(conn)
-    assert conn.resp_body == "<h1>Keys</h1>\none:2:100<br>23:string:200<br>456:32:200\n"
+    assert Enum.all?([
+      conn.resp_body =~ "<h1>Keys</h1>\n",
+      conn.resp_body =~ "one:2:",
+      conn.resp_body =~ "23:string:",
+      conn.resp_body =~ "456:32:",
+    ])
   end
 
   describe "get key" do
@@ -41,10 +46,10 @@ defmodule KVstore.Test.Router do
         |> Router.call(@opts)
 
       assert_200(conn)
-      assert conn.resp_body == "one:2:100"
+      assert match? "one:2:" <> _any, conn.resp_body
     end
 
-    test "missing" do
+    test "doesn't exist" do
       assert_raise Router.KeyNotFound, "Key wasn't found", fn ->
         conn(:get, "/store/badabu!")
         |> Router.call(@opts)
@@ -61,7 +66,7 @@ defmodule KVstore.Test.Router do
       assert resp_info(conn) == {400, "Key already exists"}
     end
 
-    test "missing required keys" do
+    test "invalid request body" do
       data = [
         # not all keys
         [key: "new_key", value: 1],
@@ -85,15 +90,15 @@ defmodule KVstore.Test.Router do
 
     test "will create" do
       conn =
-        conn(:post, "/store", key: "new_key", value: 1, ttl: "10")
+        conn(:post, "/store", key: "new_key", value: 1, ttl: "10000")
         |> Router.call(@opts)
 
-      assert resp_info(conn) == {201, "new_key:1:10"}
+      assert resp_info(conn) == {201, "new_key:1:10000"}
     end
   end
 
   describe "update key" do
-    test "missing" do
+    test "doesn't exist" do
       key = "xxx"
       assert Storage.get(key) == :not_found
 
@@ -107,8 +112,8 @@ defmodule KVstore.Test.Router do
       key = "one"
       old_data = Storage.get(key)
 
-      {^key, old_value, old_ttl} = old_data
-      new_data = [key: key, value: "new_value", ttl: "10"]
+      {^key, _v, _ttl} = old_data
+      new_data = [key: key, value: "new_value", ttl: "10000"]
 
       assert old_data != Keyword.values(new_data) |> List.to_tuple
 
@@ -116,13 +121,13 @@ defmodule KVstore.Test.Router do
         conn(:put, "/store/#{key}", new_data)
         |> Router.call(@opts)
 
-      assert Storage.get(key) == Keyword.values(new_data) |> List.to_tuple
+      assert match? {^key, "new_value", _}, Storage.get(key)
       assert resp_info(conn) == {200, Keyword.values(new_data) |> Enum.join(":")}
     end
   end
 
   describe "delete key" do
-    test "missing" do
+    test "doesn't exist" do
       assert_raise Router.KeyNotFound, "Key wasn't found", fn ->
         conn(:delete, "/store/xxx")
         |> Router.call(@opts)
@@ -135,6 +140,27 @@ defmodule KVstore.Test.Router do
         |> Router.call(@opts)
 
       assert resp_info(conn) == {204, ""}
+    end
+  end
+
+  describe "ttl" do
+    test "key expires" do
+      # create new key
+      key = "redis"
+      conn(:post, "/store", key: key, value: 3.3, ttl: "500")
+      |> Router.call(@opts)
+
+      fetch_key = fn ->
+        conn(:get, "/store/#{key}")
+        |> Router.call(@opts)
+      end
+
+      # key exists
+      assert_200(fetch_key.())
+
+      # after some time passes, key will be deleted
+      :timer.sleep(600)
+      assert_raise Router.KeyNotFound, "Key wasn't found", fn -> fetch_key.() end
     end
   end
 
