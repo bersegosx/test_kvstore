@@ -7,10 +7,14 @@ defmodule KVstore.Storage.TTL do
   require Logger
 
   alias KVstore.Utils.PQueue
-  alias KVstore.Storage
 
-  @name :pqueue
-  @initial_state %{queue: nil, timer: nil, keys: %{}}
+  @name :storage_ttl
+  @initial_state %{
+    queue: nil,
+    timer: nil,
+    keys: %{},
+    storage_module: nil,
+  }
 
   def insert(key, ttl) do
     GenServer.cast(@name, {:insert, key, ttl})
@@ -20,15 +24,16 @@ defmodule KVstore.Storage.TTL do
     GenServer.cast(@name, {:remove, key})
   end
 
-  def start_link(dets_list \\ []) do
-    GenServer.start_link(__MODULE__, dets_list, name: @name)
+  def start_link(dets_list \\ [], storage \\ KVstore.Storage) do
+    GenServer.start_link(__MODULE__, [dets_list, storage], name: @name)
   end
 
-  def init(dets_list) do
-    {queue, keys} = from_dets(dets_list)
+  def init([dets_list, storage]) do
+    {queue, keys} = from_dets(dets_list, storage)
     timer_ref = set_expiration_timer(queue, nil)
 
-    {:ok, %{@initial_state| queue: queue, timer: timer_ref, keys: keys}}
+    {:ok, %{@initial_state| queue: queue, timer: timer_ref, keys: keys,
+                            storage_module: storage}}
   end
 
   def handle_cast({:insert, key, ttl}, state) do
@@ -67,7 +72,7 @@ defmodule KVstore.Storage.TTL do
     {_ttl, keys, new_queue} = :gb_trees.take_smallest(queue)
     timer_ref = set_expiration_timer(new_queue, state.timer)
     # remove keys in storage
-    Enum.each(keys, &(Storage.delete(&1, false)))
+    Enum.each(keys, &(state.storage_module.delete(&1, false)))
 
     {:noreply, %{state| queue: new_queue, timer: timer_ref,
                         keys: Map.drop(state.keys, keys)}}
@@ -76,12 +81,12 @@ defmodule KVstore.Storage.TTL do
   @doc """
   Load priority queue and keys from dets values
   """
-  def from_dets(values) do
+  def from_dets(values, storage) do
     Enum.reduce(values, {:gb_trees.empty(), %{}},
       fn ({key, _v, ttl}, {q, keys} = acc) ->
         now = System.system_time(:millisecond)
         if now > ttl do
-          Storage.delete(key, false)
+          storage.delete(key, false)
           acc
         else
           {PQueue.insert(q, key, ttl), Map.put(keys, key, ttl)}
@@ -97,7 +102,7 @@ defmodule KVstore.Storage.TTL do
     else
       {ttl, _keys} = :gb_trees.smallest(queue)
       time = ttl - System.system_time(:millisecond)
-      Process.send_after(self(), :key_expire, time)
+      Process.send_after(self(), :key_expire, max(0, time))
     end
   end
 end

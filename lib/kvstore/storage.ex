@@ -1,3 +1,7 @@
+defmodule StorageCanDeleteKey do
+  @callback delete(key :: String.t, remove_from_ttl :: Bool.t) :: term
+end
+
 defmodule KVstore.Storage do
   @moduledoc """
   Storage for KV.
@@ -6,6 +10,7 @@ defmodule KVstore.Storage do
   calls `:dets.sync` on modification
   """
 
+  @behaviour StorageCanDeleteKey
   use GenServer
   require Logger
 
