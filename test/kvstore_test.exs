@@ -15,7 +15,7 @@ defmodule KVstore.Test.Router do
         {"23",  "string", 200_000},
         {"456", 32,       300_000},
       ],
-      fn ({k, v, ttl}) -> Storage.create(k, v, ttl) end
+      fn ({k, v, ttl}) -> Storage.insert(k, v, ttl) end
     )
 
     on_exit fn ->

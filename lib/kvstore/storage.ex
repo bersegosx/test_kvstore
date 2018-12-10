@@ -13,8 +13,8 @@ defmodule KVstore.Storage do
 
   @name __MODULE__
 
-  def create(key, value, ttl) do
-    GenServer.call(@name, {:create, key, value, ttl})
+  def insert(key, value, ttl) do
+    GenServer.call(@name, {:insert, key, value, ttl})
   end
 
   def get(key) do
@@ -64,7 +64,7 @@ defmodule KVstore.Storage do
     end
   end
 
-  def handle_call({:create, key, value, ttl}, _from, state) do
+  def handle_call({:insert, key, value, ttl}, _from, state) do
     ttl_end = System.system_time(:millisecond) + ttl
 
     :ok = :dets.insert(@name, {key, value, ttl_end})

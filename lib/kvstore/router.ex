@@ -5,7 +5,7 @@ defmodule KVstore.Router do
   methods:
 
     GET    `/store`      - list all keys
-    POST   `/store`      - create new key
+    POST   `/store`      - insert new key
     GET    `/store/:key` - detail key data
     PUT    `/store/:key` - update key data
     DELETE `/store/:key` - delete key
@@ -52,7 +52,7 @@ defmodule KVstore.Router do
     {status, message} =
       case Storage.get(key) do
         :not_found ->
-          Storage.create(key, value, ttl)
+          Storage.insert(key, value, ttl)
           {201, format_key({key, value, ttl})}
 
         _ ->
@@ -74,7 +74,7 @@ defmodule KVstore.Router do
     %{"value" => v, "ttl" => ttl} = conn.body_params
     {ttl, _} = Integer.parse(ttl, 10)
 
-    Storage.create(key, v, ttl)
+    Storage.insert(key, v, ttl)
     send_resp(conn, 200, format_key({key, v, ttl}))
   end
 
